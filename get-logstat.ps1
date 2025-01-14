@@ -1,46 +1,3 @@
-<#
-    Copyright (c) 2025, Ing. Martin Fridrich
-    Všechna prava vyhrazena.
-    
-    Tento skript analyzuje logy systemu Windows a provadi ruzne statistiky na zaklade zadaneho casoveho obdobi.
-    Parametry logu, jako jsou nazy logu a casove obdobi, lze upravit dle potreby.
-    Autor: Ing. Martin Fridrich
-    Verze: 1.0
-    Datum: 2025-01-13
-
-    .SYNOPSIS
-    Tento skript analyzuje Windows logy na zaklade casoveho intervalu, vypocita prumerou velikost udalosti v bytech
-    a identifikuje nejvetsi 15minutovy casovy blok s nejvice udalostmi.
-
-    .DESCRIPTION
-    Skript umoznuje uzivateli zadat nazev logu (napriklad "Security", "System") a pocet dnu, pro ktere maji byt
-    udalosti analyzovany. Na zaklade techto parametru skript provede analyzu udalosti, vcetne vypoctu prumerne velikosti
-    udalosti a identifikace nejvetsiho casoveho intervalu s nejvice udalostmi.
-
-    .PARAMETER Days
-    Pocet dnu, ktere chcete zpetne analyzovat. Vychozi hodnota je 1.
-
-    .PARAMETER LogNames
-    Nazy logu k analyze (napr. "Security", "System"). Muzete zadat vice logu oddelene carkou.
-
-    .EXAMPLE
-    .\get-logstat.ps1 -Days 30 -LogNames 'Security', 'System'
-    Tento priklad provede analyzu logu "Security" a "System" za poslednich 30 dnu.
-
-    .EXAMPLE
-    .\get-logstat.ps1 -Days 7 -LogNames 'Application'
-    Tento priklad provede analyzu logu "Application" za poslednich 7 dnu.
-
-    .EXAMPLE
-    .\get-logstat.ps1 -Days 60 -LogNames 'Security'
-    Tento priklad provede analyzu logu "Security" za poslednich 60 dnu.
-
-    .NOTES
-    Autor: Ing. Martin Fridrich
-    Verze: 1.0
-    Datum: 2025-01-13
-#>
-
 param(
     # Pocatni pocet dnu pro analyzu (vychozi 1)
     [int]$Days = 1,
@@ -99,7 +56,7 @@ foreach ($logName in $LogNames) {
             return $roundedTime.AddMinutes(-$minuteOffset)
         }
 
-        Write-Host "nZpracovavam log: $LogName ..."
+        Write-Host "`nZpracovavam log: $LogName ..."
 
         # Stopky pro zmereni casu zpracovani konkretniho logu
         $logStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -109,11 +66,17 @@ foreach ($logName in $LogNames) {
         $totalSize = 0       # Celkova velikost udalosti v bytech
 
         # Nacetame udalosti z logu a rovnou zpracovavame
-        Get-WinEvent -FilterHashtable @{
+        $events = Get-WinEvent -FilterHashtable @{
             LogName   = $LogName
             StartTime = $startTime
-        } -ErrorAction SilentlyContinue |
-        ForEach-Object {
+        } -ErrorAction SilentlyContinue
+
+        $totalEvents = $events.Count
+        $counter = 0
+
+        $events | ForEach-Object {
+            $counter++
+            
             # Overime TimeCreated
             if ($_.TimeCreated -ne $null -and
                 $_.TimeCreated.Year -ge 1 -and $_.TimeCreated.Year -le 9999) {
@@ -145,6 +108,10 @@ foreach ($logName in $LogNames) {
                     }
                 }
             }
+
+            # Aktualizace progress baru
+            $percentComplete = ($counter / $totalEvents) * 100
+            Write-Progress -PercentComplete $percentComplete -Status "Zpracovavam log $LogName" -Activity "Analyza udalosti"
         }
 
         # Hotovo s nacitanim a tridim do intervalu
@@ -180,7 +147,7 @@ foreach ($logName in $LogNames) {
         if ($maxBlock) {
             $intervalStart = $maxBlock
             $intervalEnd = $intervalStart.AddMinutes(15)
-            Write-Host "n-- Nejvetsi 15min. interval --"
+            Write-Host "`n-- Nejvetsi 15min. interval --"
             Write-Host "Od:    $intervalStart"
             Write-Host "Do:    $intervalEnd"
             Write-Host "Pocet udalosti: $maxCount"
@@ -189,7 +156,7 @@ foreach ($logName in $LogNames) {
         # Zobrazime cas zpracovani ve formatu min:sec
         $timeSpan = $logStopwatch.Elapsed
         $elapsedTime = '{0}:{1:00}' -f [int]$timeSpan.TotalMinutes, $timeSpan.Seconds
-        Write-Host "nCas zpracovani logu '$LogName': $elapsedTime (min:sec)"
+        Write-Host "`nCas zpracovani logu '$LogName': $elapsedTime (min:sec)"
     } -ArgumentList $logName, $startTime
 }
 
@@ -200,4 +167,4 @@ $jobs | ForEach-Object {
     Remove-Job -Job $_
 }
 
-Write-Host "nAnalyza dokoncena."
+Write-Host "`nAnalyza dokoncena."
